@@ -1,0 +1,80 @@
+const SHEET_NAME = "Master Request Log";
+const HEADER_ROW = 4;
+const DATA_START_ROW = 5;
+
+// 1. Read all records from Google Sheet (GET request)
+function doGet(e) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME);
+  const lastRow = sheet.getLastRow();
+  
+  if (lastRow < DATA_START_ROW) {
+    return ContentService.createTextOutput(JSON.stringify([]))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  const values = sheet.getRange(DATA_START_ROW, 1, lastRow - DATA_START_ROW + 1, 21).getDisplayValues();
+  const records = values
+    .filter(row => row[0] !== "") // Skip blank pre-staged rows
+    .map(row => ({
+      id: row[0],
+      lob: row[2],
+      status: row[3],
+      priority: row[5],
+      subject: row[6],
+      dateReq: row[7],
+      scNo: row[12],
+      polNo: row[13],
+      transStatus: row[14],
+      dateTrans: row[15],
+      recBy: row[17],
+      transRemarks: row[18],
+      notes: row[20]
+    }));
+
+  return ContentService.createTextOutput(JSON.stringify(records))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// 2. Add or Update a record in Google Sheet (POST request)
+function doPost(e) {
+  const payload = JSON.parse(e.postData.contents);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAME);
+  const lastRow = sheet.getLastRow();
+  
+  let targetRow = -1;
+  if (lastRow >= DATA_START_ROW) {
+    const ids = sheet.getRange(DATA_START_ROW, 1, lastRow - DATA_START_ROW + 1, 1).getValues().flat();
+    const foundIdx = ids.indexOf(payload.id);
+    if (foundIdx !== -1) {
+      targetRow = DATA_START_ROW + foundIdx;
+    }
+  }
+
+  // If new Request ID, find first blank row in Column A
+  if (targetRow === -1) {
+    const allIds = sheet.getRange(DATA_START_ROW, 1, Math.max(1, sheet.getMaxRows() - DATA_START_ROW + 1), 1).getValues().flat();
+    const firstBlank = allIds.indexOf("");
+    targetRow = firstBlank !== -1 ? DATA_START_ROW + firstBlank : lastRow + 1;
+  }
+
+  // Write input columns (preserving formula columns E, I, J, K, Q)
+  sheet.getRange(targetRow, 1).setValue(payload.id);
+  sheet.getRange(targetRow, 2).setValue(payload.id);
+  sheet.getRange(targetRow, 3).setValue(payload.lob);
+  sheet.getRange(targetRow, 4).setValue(payload.status);
+  sheet.getRange(targetRow, 6).setValue(payload.priority);
+  sheet.getRange(targetRow, 7).setValue(payload.subject);
+  sheet.getRange(targetRow, 8).setValue(payload.dateReq);
+  sheet.getRange(targetRow, 13).setValue(payload.scNo || "");
+  sheet.getRange(targetRow, 14).setValue(payload.polNo || "");
+  sheet.getRange(targetRow, 15).setValue(payload.transStatus || "");
+  sheet.getRange(targetRow, 16).setValue(payload.dateTrans || "");
+  sheet.getRange(targetRow, 18).setValue(payload.recBy || "");
+  sheet.getRange(targetRow, 19).setValue(payload.transRemarks || "");
+  sheet.getRange(targetRow, 21).setValue(payload.notes || "");
+
+  return ContentService.createTextOutput(JSON.stringify({ success: true, row: targetRow }))
+    .setMimeType(ContentService.MimeType.JSON);
+}
